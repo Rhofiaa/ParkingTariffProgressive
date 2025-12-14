@@ -452,8 +452,11 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         else:
             kategori_jam = 'Moderate'
         
-        # Build input data from location base
-        data_dict = {}
+        # Get actual feature names from model if available
+        if hasattr(model, 'feature_names_in_'):
+            actual_features = list(model.feature_names_in_)
+        else:
+            actual_features = model_features
         
         # Convert location_base_data (Series) to dict safely
         if isinstance(location_base_data, pd.Series):
@@ -461,8 +464,9 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         else:
             location_dict = dict(location_base_data)
         
-        # Initialize with all features from model_features, using location data as base
-        for feat in model_features:
+        # Build input data with all required features
+        data_dict = {}
+        for feat in actual_features:
             if feat in location_dict:
                 val = location_dict[feat]
                 # Ensure numeric conversion
@@ -488,7 +492,7 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         
         # Create DataFrame with features in correct order
         data_baru = pd.DataFrame([data_dict])
-        data_baru = data_baru[model_features]  # Ensure correct column order
+        data_baru = data_baru[actual_features]  # Ensure correct column order
         
         # Make prediction
         pred_encoded = model.predict(data_baru)[0]
@@ -497,7 +501,7 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         confidence = float(proba[pred_encoded])
         
         # Local Gain Implementation
-        global_importance = pd.Series(model.feature_importances_, index=model.feature_names_in_)
+        global_importance = pd.Series(model.feature_importances_, index=actual_features)
         location_mean = pd.Series(location_dict).mean()
         
         local_gain_calc = (data_baru.iloc[0] - location_mean) * global_importance
@@ -512,8 +516,9 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         
     except Exception as e:
         import traceback
-        error_msg = f"Prediction Error: {str(e)}\nTraceback: {traceback.format_exc()}"
-        return "Model Error", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, error_msg
+        error_msg = f"{str(e)}"
+        tb = traceback.format_exc()
+        return f"Error: {error_msg}", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, tb
 
 # --- Module 1: Data Table ---
 def display_data_table(df_raw, df_processed):
@@ -1205,7 +1210,9 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
             )
             
             if not isinstance(pred_class, str) or "Error" in pred_class or "Failed" in pred_class:
-                st.error(f"Simulation Failed: {pred_class}. Ensure model is trained.")
+                st.error(f"Simulation Failed: {pred_class}")
+                if "Error:" in pred_class:
+                    st.code(keterangan_jam)  # Show traceback
             else:
                 rekomendasi_tarif_dasar = tarif_mapping[jenis].get(pred_class, 0)
                 rekomendasi_tarif_progresif = calculate_progresif_tarif(jenis, pred_class, jam_desimal_input)
