@@ -494,9 +494,14 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         proba = model.predict_proba(data_baru)[0]
         confidence = float(proba[pred_encoded])
         
-        # Local Gain: compare with location mean, not global mean
+        # Local Gain: compare with location mean (only numeric features)
         global_importance = pd.Series(model.feature_importances_, index=feature_names)
-        location_mean = pd.Series(location_dict).mean()
+        
+        # Only use numeric values for location mean
+        numeric_location_dict = {k: float(v) for k, v in location_dict.items() 
+                                 if k in feature_names}
+        location_mean = pd.Series(numeric_location_dict).mean() if numeric_location_dict else 0.0
+        
         local_gain_calc = (data_baru.iloc[0] - location_mean) * global_importance
         top_gain = local_gain_calc.abs().sort_values(ascending=False).head(3)
         
