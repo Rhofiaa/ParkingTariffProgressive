@@ -432,13 +432,12 @@ def train_models(df, jam_cols):
     
     return results
 
-# Prediction Function for Simulation (uses location-specific data as base)
-def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, location_base_data, model_features): 
+# Prediction Function for Simulation
+def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, X_ref): 
     if model is None:
         return "Model not trained", 0.0, pd.Series({"No Model": 0}), {"Error": 1.0}, "No trained model"
 
     try:
-        # Ensure all inputs are converted to proper Python native types (not numpy)
         jam_input = float(jam_input)
         jumlah_input = float(jumlah_input)
         jenis = str(jenis).strip()
@@ -452,76 +451,42 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         else:
             kategori_jam = 'Moderate'
         
-        # Get actual feature names from model
-        try:
-            actual_features = list(model.feature_names_in_)
-        except (AttributeError, TypeError):
-            actual_features = list(model_features) if isinstance(model_features, (list, np.ndarray)) else model_features.tolist()
-        
-        # Convert location_base_data to dict
-        if isinstance(location_base_data, pd.Series):
-            location_dict = location_base_data.to_dict()
-        elif isinstance(location_base_data, dict):
-            location_dict = location_base_data
-        else:
-            location_dict = {}
-        
-        # Build feature vector in correct order
-        feature_values = []
-        for feat in actual_features:
-            if feat in location_dict:
-                val = location_dict[feat]
-            else:
-                # Try fuzzy matching if exact name not found
-                matching_keys = [k for k in location_dict.keys() if feat.lower() in k.lower() or k.lower() in feat.lower()]
-                val = location_dict[matching_keys[0]] if matching_keys else 0.0
-            
-            # Ensure numeric
-            try:
-                val = float(val) if pd.notna(val) else 0.0
-            except (ValueError, TypeError):
-                val = 0.0
-            
-            feature_values.append(val)
-        
-        # Create DataFrame for prediction
-        data_baru = pd.DataFrame([feature_values], columns=actual_features)
+        # Use mean from X_ref (entire train+test data)
+        data_baru = pd.DataFrame([X_ref.mean()], columns=X_ref.columns)
         
         # Override with simulation inputs
         kolom_jumlah = f'Number of {jenis} ({hari})'
-        kolom_jam = f'{kategori_jam} Hours for {jenis} ({hari})'
+        if kolom_jumlah in data_baru.columns: 
+            data_baru[kolom_jumlah] = jumlah_input
         
-        if kolom_jumlah in data_baru.columns:
-            data_baru[kolom_jumlah] = float(jumlah_input)
-        if kolom_jam in data_baru.columns:
-            data_baru[kolom_jam] = float(jam_input)
+        # Set time column for the predicted category
+        kolom_jam_input = f'{kategori_jam} Hours for {jenis} ({hari})'
+        if kolom_jam_input in data_baru.columns: 
+            data_baru[kolom_jam_input] = jam_input
         
-        # Make prediction
-        pred_encoded = model.predict(data_baru)[0]
-        pred_class = str(le.inverse_transform([pred_encoded])[0]).strip()
-        proba = model.predict_proba(data_baru)[0]
-        confidence = float(proba[pred_encoded])
-        
-        # Feature importance
-        try:
-            global_importance = pd.Series(model.feature_importances_, index=actual_features)
-            location_mean = pd.Series(location_dict).mean()
-            local_gain_calc = (data_baru.iloc[0] - location_mean) * global_importance
-            top_gain = local_gain_calc.abs().sort_values(ascending=False).head(3)
-        except:
-            top_gain = pd.Series({"Feature": 1.0})
-        
-        # Probability dict
-        proba_dict = {str(cls).strip(): float(p) for cls, p in zip(le.classes_, proba)}
-        
+        # Time logic explanation
         keterangan_jam = f"Input hour **{jam_input:.2f}** is categorized as **'{kategori_jam}'**."
-        
-        return pred_class, confidence, top_gain, proba_dict, keterangan_jam
-        
+
+        try:
+            pred_encoded = model.predict(data_baru)[0]
+            pred_class = str(le.inverse_transform([pred_encoded])[0]).strip()
+            proba = model.predict_proba(data_baru)[0]
+            confidence = float(proba[pred_encoded])
+            
+            # Local Gain Implementation
+            global_importance = pd.Series(model.feature_importances_, index=model.feature_names_in_)
+            local_gain_calc = (data_baru.iloc[0] - X_ref.mean()) * global_importance
+            top_gain = local_gain_calc.abs().sort_values(ascending=False).head(3)
+            
+            proba_dict = {str(cls).strip(): float(p) for cls, p in zip(le.classes_, proba)}
+            
+            return pred_class, confidence, top_gain, proba_dict, keterangan_jam
+        except Exception as e:
+            return f"Prediction Error: {str(e)[:50]}", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, keterangan_jam
+            
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        return f"Error: {str(e)[:50]}", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, error_detail
+        return f"Error: {str(e)[:50]}", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, traceback.format_exc()
 
 # --- Module 1: Data Table ---
 def display_data_table(df_raw, df_processed):
@@ -1203,13 +1168,9 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
             jenis_key = 'motorcycle' if jenis == 'Motorcycle' else 'car'
             data = models_data[jenis_key]
             
-            # Get location-specific data from df_processed based on selected location
-            location_idx = df_processed[df_processed['Location Point'] == selected_titik].index[0] if selected_titik in df_processed['Location Point'].values else 0
-            location_row = df_processed.iloc[location_idx]
-            
             pred_class, confidence, top_gain, proba_dict, keterangan_jam = predict_single_input(
                 jenis, hari, jam_desimal_input, jumlah_input, 
-                data['model'], data['le'], location_row, data['fitur']
+                data['model'], data['le'], data['X_ref']
             )
             
             if not isinstance(pred_class, str) or "Error" in pred_class or "Failed" in pred_class:
