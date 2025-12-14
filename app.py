@@ -1237,14 +1237,14 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
                     st.markdown("**Top 3 Contributors (Local Gain):**")
                     if isinstance(top_gain, pd.Series) and len(top_gain) > 0:
                         for idx, (feature_name, gain_value) in enumerate(top_gain.items(), 1):
-                            st.markdown(f"{idx}. **{feature_name}** (Impact: {gain_value:.4f})")
+                            st.markdown(f"- {feature_name} (Pendorong utama prediksi)")
                     else:
-                        st.markdown("- No contribution data available")
+                        st.markdown("- Tidak ada data kontribusi tersedia")
                     
-                    st.markdown("**Probability All Classes:**")
-                    # Display probabilities in a nice format
-                    prob_text = ", ".join([f"**{cls}**: {prob:.1%}" for cls, prob in sorted(proba_dict.items(), key=lambda x: x[1], reverse=True)])
-                    st.markdown(prob_text)
+                    st.markdown("**Probabilitas Semua Kelas:**")
+                    # Display probabilities with clean formatting (convert numpy types to Python native)
+                    clean_proba = {cls: float(prob) for cls, prob in proba_dict.items()}
+                    st.code(str(clean_proba), language="python")
 
                 with col_info2:
                     st.markdown("**Progressive Logic Applied:**")
