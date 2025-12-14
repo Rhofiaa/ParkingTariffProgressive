@@ -437,29 +437,30 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
     if model is None:
         return "Model Failed", 0.0, pd.Series({"No Model": 0}), {"Error": 1.0}, "No trained model"
 
-    kategori_jam = kategori_jam_otomatis(jam_input)
-    prefix = jenis
-    
-    # Use location-specific base data instead of mean
-    # Ensure we have all required columns in the correct order
     try:
-        data_baru = pd.DataFrame([location_base_data[model_features].values], columns=model_features)
-    except (KeyError, IndexError):
-        # Fallback: use mean if location data is missing
-        data_baru = pd.DataFrame([location_base_data.mean()], columns=location_base_data.columns)
-    
-    kolom_jumlah = f'Number of {prefix} ({hari})'
-    if kolom_jumlah in data_baru.columns: 
-        data_baru[kolom_jumlah] = jumlah_input
-    
-    kolom_jam_input = f'{kategori_jam} Hours for {prefix} ({hari})'
-    
-    if kolom_jam_input in data_baru.columns: 
-        data_baru[kolom_jam_input] = jam_input
+        kategori_jam = kategori_jam_otomatis(float(jam_input))
+        prefix = str(jenis)
+        hari_str = str(hari)
+        
+        # Use location-specific base data instead of mean
+        # Ensure we have all required columns in the correct order
+        try:
+            data_baru = pd.DataFrame([location_base_data[model_features].values], columns=model_features)
+        except (KeyError, IndexError, TypeError):
+            # Fallback: use mean if location data is missing
+            data_baru = pd.DataFrame([location_base_data.mean()], columns=location_base_data.columns)
+        
+        kolom_jumlah = f'Number of {prefix} ({hari_str})'
+        if kolom_jumlah in data_baru.columns: 
+            data_baru[kolom_jumlah] = float(jumlah_input)
+        
+        kolom_jam_input = f'{kategori_jam} Hours for {prefix} ({hari_str})'
+        
+        if kolom_jam_input in data_baru.columns: 
+            data_baru[kolom_jam_input] = float(jam_input)
 
-    keterangan_jam = f"Input hour **{jam_input:.2f}** is categorized as **'{kategori_jam}'**."
+        keterangan_jam = f"Input hour **{jam_input:.2f}** is categorized as **'{kategori_jam}'**."
 
-    try:
         pred_encoded = model.predict(data_baru)[0]
         pred_class = le.inverse_transform([pred_encoded])[0]
         proba = model.predict_proba(data_baru)[0]
@@ -475,7 +476,8 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         
         return pred_class, confidence, top_gain, proba_dict, keterangan_jam
     except Exception as e:
-        return f"Prediction Error: {e}", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, keterangan_jam
+        import traceback
+        return f"Prediction Error: {str(e)}", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, str(traceback.format_exc())
 
 # --- Module 1: Data Table ---
 def display_data_table(df_raw, df_processed):
