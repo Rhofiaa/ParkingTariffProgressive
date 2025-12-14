@@ -1235,10 +1235,16 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
                     st.markdown("**Time Logic Explanation:**")
                     st.info(keterangan_jam)
                     st.markdown("**Top 3 Contributors (Local Gain):**")
-                    if isinstance(top_gain, pd.Series):
-                        for f in top_gain.index: 
-                            st.markdown(f"- **{f}** (Main predictor)")
-                    st.caption(f"Probability All Classes: {proba_dict}")
+                    if isinstance(top_gain, pd.Series) and len(top_gain) > 0:
+                        for idx, (feature_name, gain_value) in enumerate(top_gain.items(), 1):
+                            st.markdown(f"{idx}. **{feature_name}** (Impact: {gain_value:.4f})")
+                    else:
+                        st.markdown("- No contribution data available")
+                    
+                    st.markdown("**Probability All Classes:**")
+                    # Display probabilities in a nice format
+                    prob_text = ", ".join([f"**{cls}**: {prob:.1%}" for cls, prob in sorted(proba_dict.items(), key=lambda x: x[1], reverse=True)])
+                    st.markdown(prob_text)
 
                 with col_info2:
                     st.markdown("**Progressive Logic Applied:**")
