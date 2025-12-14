@@ -432,16 +432,21 @@ def train_models(df, jam_cols):
     
     return results
 
-# Prediction Function for Simulation
-def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, X_ref): 
+# Prediction Function for Simulation (uses location-specific data as base)
+def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, location_base_data, model_features): 
     if model is None:
         return "Model Failed", 0.0, pd.Series({"No Model": 0}), {"Error": 1.0}, "No trained model"
 
     kategori_jam = kategori_jam_otomatis(jam_input)
     prefix = jenis
     
-    # Use mean from X_ref
-    data_baru = pd.DataFrame([X_ref.mean()], columns=X_ref.columns)
+    # Use location-specific base data instead of mean
+    # Ensure we have all required columns in the correct order
+    try:
+        data_baru = pd.DataFrame([location_base_data[model_features].values], columns=model_features)
+    except (KeyError, IndexError):
+        # Fallback: use mean if location data is missing
+        data_baru = pd.DataFrame([location_base_data.mean()], columns=location_base_data.columns)
     
     kolom_jumlah = f'Number of {prefix} ({hari})'
     if kolom_jumlah in data_baru.columns: 
@@ -463,7 +468,7 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, X_ref)
         # Local Gain Implementation
         global_importance = pd.Series(model.feature_importances_, index=model.feature_names_in_)
         
-        local_gain_calc = (data_baru.iloc[0] - X_ref.mean()) * global_importance
+        local_gain_calc = (data_baru.iloc[0] - location_base_data.mean()) * global_importance
         top_gain = local_gain_calc.abs().sort_values(ascending=False).head(3)
         
         proba_dict = dict(zip(le.classes_, proba))
@@ -1152,8 +1157,13 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
             jenis_key = 'motorcycle' if jenis == 'Motorcycle' else 'car'
             data = models_data[jenis_key]
             
+            # Get location-specific data from df_processed based on selected location
+            location_idx = df_processed[df_processed['Location Point'] == selected_titik].index[0] if selected_titik in df_processed['Location Point'].values else 0
+            location_row = df_processed.iloc[location_idx]
+            
             pred_class, confidence, top_gain, proba_dict, keterangan_jam = predict_single_input(
-                jenis, hari, jam_desimal_input, jumlah_input, data['model'], data['le'], data['X_ref']
+                jenis, hari, jam_desimal_input, jumlah_input, 
+                data['model'], data['le'], location_row, data['fitur']
             )
             
             if not isinstance(pred_class, str) or "Error" in pred_class or "Failed" in pred_class:
