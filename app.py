@@ -438,46 +438,82 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
         return "Model Failed", 0.0, pd.Series({"No Model": 0}), {"Error": 1.0}, "No trained model"
 
     try:
-        kategori_jam = kategori_jam_otomatis(float(jam_input))
-        prefix = str(jenis)
-        hari_str = str(hari)
+        # Ensure all inputs are converted to proper Python native types (not numpy)
+        jam_input = float(jam_input)
+        jumlah_input = float(jumlah_input)
+        jenis = str(jenis).strip()
+        hari = str(hari).strip()
         
-        # Use location-specific base data instead of mean
-        # Ensure we have all required columns in the correct order
-        try:
-            data_baru = pd.DataFrame([location_base_data[model_features].values], columns=model_features)
-        except (KeyError, IndexError, TypeError):
-            # Fallback: use mean if location data is missing
-            data_baru = pd.DataFrame([location_base_data.mean()], columns=location_base_data.columns)
+        # Determine category
+        if (jam_input >= 0 and jam_input < 6) or (jam_input >= 22 and jam_input < 24):
+            kategori_jam = 'Off-Peak'
+        elif (jam_input >= 9 and jam_input < 19):
+            kategori_jam = 'Peak'
+        else:
+            kategori_jam = 'Moderate'
         
-        kolom_jumlah = f'Number of {prefix} ({hari_str})'
-        if kolom_jumlah in data_baru.columns: 
-            data_baru[kolom_jumlah] = float(jumlah_input)
+        # Build input data from location base
+        data_dict = {}
         
-        kolom_jam_input = f'{kategori_jam} Hours for {prefix} ({hari_str})'
+        # Convert location_base_data (Series) to dict safely
+        if isinstance(location_base_data, pd.Series):
+            location_dict = location_base_data.to_dict()
+        else:
+            location_dict = dict(location_base_data)
         
-        if kolom_jam_input in data_baru.columns: 
-            data_baru[kolom_jam_input] = float(jam_input)
-
-        keterangan_jam = f"Input hour **{jam_input:.2f}** is categorized as **'{kategori_jam}'**."
-
+        # Initialize with all features from model_features, using location data as base
+        for feat in model_features:
+            if feat in location_dict:
+                val = location_dict[feat]
+                # Ensure numeric conversion
+                if isinstance(val, str):
+                    try:
+                        val = float(val)
+                    except:
+                        val = 0.0
+                else:
+                    val = float(val) if pd.notna(val) else 0.0
+                data_dict[feat] = val
+            else:
+                data_dict[feat] = 0.0
+        
+        # Override with simulation inputs
+        kolom_jumlah = f'Number of {jenis} ({hari})'
+        kolom_jam = f'{kategori_jam} Hours for {jenis} ({hari})'
+        
+        if kolom_jumlah in data_dict:
+            data_dict[kolom_jumlah] = float(jumlah_input)
+        if kolom_jam in data_dict:
+            data_dict[kolom_jam] = float(jam_input)
+        
+        # Create DataFrame with features in correct order
+        data_baru = pd.DataFrame([data_dict])
+        data_baru = data_baru[model_features]  # Ensure correct column order
+        
+        # Make prediction
         pred_encoded = model.predict(data_baru)[0]
         pred_class = le.inverse_transform([pred_encoded])[0]
         proba = model.predict_proba(data_baru)[0]
-        confidence = proba[pred_encoded] 
+        confidence = float(proba[pred_encoded])
         
         # Local Gain Implementation
         global_importance = pd.Series(model.feature_importances_, index=model.feature_names_in_)
+        location_mean = pd.Series(location_dict).mean()
         
-        local_gain_calc = (data_baru.iloc[0] - location_base_data.mean()) * global_importance
+        local_gain_calc = (data_baru.iloc[0] - location_mean) * global_importance
         top_gain = local_gain_calc.abs().sort_values(ascending=False).head(3)
         
-        proba_dict = dict(zip(le.classes_, proba))
+        # Build probability dict with native Python types
+        proba_dict = {str(cls): float(p) for cls, p in zip(le.classes_, proba)}
+        
+        keterangan_jam = f"Input hour **{jam_input:.2f}** is categorized as **'{kategori_jam}'**."
         
         return pred_class, confidence, top_gain, proba_dict, keterangan_jam
+        
     except Exception as e:
         import traceback
-        return f"Prediction Error: {str(e)}", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, str(traceback.format_exc())
+        error_msg = f"Prediction Error: {str(e)}\nTraceback: {traceback.format_exc()}"
+        return "Model Error", 0.0, pd.Series({"Error": 0}), {"Error": 1.0}, error_msg
 
 # --- Module 1: Data Table ---
 def display_data_table(df_raw, df_processed):
