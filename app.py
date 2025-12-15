@@ -242,11 +242,11 @@ def time_to_decimal_hour(time_obj):
         return np.nan
     return time_obj.hour + time_obj.minute / 60.0
 
-def kategori_jam_otomatis(jam):
+def hour_category_auto(hour):
     """Automatically categorize hour into Off-Peak/Moderate/Peak based on time."""
-    if (jam >= 0 and jam < 6) or (jam >= 22 and jam < 24):
+    if (hour >= 0 and hour < 6) or (hour >= 22 and hour < 24):
         return 'Off-Peak'
-    elif (jam >= 9 and jam < 19):
+    elif (hour >= 9 and hour < 19):
         return 'Peak'
     else:
         return 'Moderate'
@@ -258,20 +258,20 @@ tarif_mapping = {
 }
 
 # Progressive Tariff Function
-def calculate_progresif_tarif(jenis, potensi_class, jam_desimal):
+def calculate_progressive_tariff(vehicle_type, tariff_class, hour_decimal):
     """Apply progressive tariff logic based on potential class and hour."""
-    tarif_dasar = tarif_mapping[jenis].get(potensi_class, 0)
+    base_tariff = tariff_mapping[vehicle_type].get(tariff_class, 0)
     
     # Progressive Logic: Increase tariff above 9:00
-    if jam_desimal > 9.0:
-        if potensi_class == 'High':
-            return tarif_dasar + 1000  # E.g., from 3000 to 4000
-        elif potensi_class == 'Medium':
-            return tarif_dasar + 500   # E.g., from 2000 to 2500
+    if hour_decimal > 9.0:
+        if tariff_class == 'High':
+            return base_tariff + 1000  # E.g., from 3000 to 4000
+        elif tariff_class == 'Medium':
+            return base_tariff + 500   # E.g., from 2000 to 2500
         else:
-            return tarif_dasar
+            return base_tariff
     else:
-        return tarif_dasar
+        return base_tariff
 
 # --- Data Loading and Preprocessing (Cached) ---
 @st.cache_data
@@ -433,23 +433,23 @@ def train_models(df, jam_cols):
     return results
 
 # Prediction Function for Simulation
-def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, location_base_data): 
+def predict_single_input(vehicle_type, day, hour_input, vehicle_count_input, model, le, location_base_data): 
     if model is None:
         return "Model not trained", 0.0, pd.Series({"No Model": 0}), {"Error": 1.0}, "No trained model"
 
     try:
-        jam_input = float(jam_input)
-        jumlah_input = float(jumlah_input)
-        jenis = str(jenis).strip()
-        hari = str(hari).strip()
+        hour_input = float(hour_input)
+        vehicle_count_input = float(vehicle_count_input)
+        vehicle_type = str(vehicle_type).strip()
+        day = str(day).strip()
         
         # Determine category
-        if (jam_input >= 0 and jam_input < 6) or (jam_input >= 22 and jam_input < 24):
-            kategori_jam = 'Off-Peak'
-        elif (jam_input >= 9 and jam_input < 19):
-            kategori_jam = 'Peak'
+        if (hour_input >= 0 and hour_input < 6) or (hour_input >= 22 and hour_input < 24):
+            hour_category = 'Off-Peak'
+        elif (hour_input >= 9 and hour_input < 19):
+            hour_category = 'Peak'
         else:
-            kategori_jam = 'Moderate'
+            hour_category = 'Moderate'
         
         # Convert location data to dict
         if isinstance(location_base_data, pd.Series):
@@ -477,21 +477,21 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
             feature_values.append(val)
         
         # Create DataFrame for prediction
-        data_baru = pd.DataFrame([feature_values], columns=feature_names)
+        new_data = pd.DataFrame([feature_values], columns=feature_names)
         
         # Override with simulation inputs
-        kolom_jumlah = f'Number of {jenis} ({hari})'
-        kolom_jam = f'{kategori_jam} Hours for {jenis} ({hari})'
+        vehicle_count_column = f'Number of {vehicle_type} ({day})'
+        hour_column = f'{hour_category} Hours for {vehicle_type} ({day})'
         
-        if kolom_jumlah in data_baru.columns:
-            data_baru[kolom_jumlah] = jumlah_input
-        if kolom_jam in data_baru.columns:
-            data_baru[kolom_jam] = jam_input
+        if vehicle_count_column in new_data.columns:
+            new_data[vehicle_count_column] = vehicle_count_input
+        if hour_column in new_data.columns:
+            new_data[hour_column] = hour_input
         
         # Make prediction
-        pred_encoded = model.predict(data_baru)[0]
+        pred_encoded = model.predict(new_data)[0]
         pred_class = str(le.inverse_transform([pred_encoded])[0]).strip()
-        proba = model.predict_proba(data_baru)[0]
+        proba = model.predict_proba(new_data)[0]
         confidence = float(proba[pred_encoded])
         
         # Local Gain: compare with location mean (only numeric features)
@@ -502,14 +502,14 @@ def predict_single_input(jenis, hari, jam_input, jumlah_input, model, le, locati
                                  if k in feature_names}
         location_mean = pd.Series(numeric_location_dict).mean() if numeric_location_dict else 0.0
         
-        local_gain_calc = (data_baru.iloc[0] - location_mean) * global_importance
+        local_gain_calc = (new_data.iloc[0] - location_mean) * global_importance
         top_gain = local_gain_calc.abs().sort_values(ascending=False).head(3)
         
         proba_dict = {str(cls).strip(): float(p) for cls, p in zip(le.classes_, proba)}
         
-        keterangan_jam = f"Input hour **{jam_input:.2f}** is categorized as **'{kategori_jam}'**."
+        hour_description = f"Input hour **{hour_input:.2f}** is categorized as **'{hour_category}'**."
         
-        return pred_class, confidence, top_gain, proba_dict, keterangan_jam
+        return pred_class, confidence, top_gain, proba_dict, hour_description
         
     except Exception as e:
         import traceback
@@ -560,39 +560,39 @@ def plot_load_vs_time(df, jam_cols, number_cols):
     
     # Motorcycles
     moto_cols = [c for c in df_load.columns if 'Motorcycle' in c]
-    for jam_col in [c for c in moto_cols if 'Hours' in c]:
+    for hour_col in [c for c in moto_cols if 'Hours' in c]:
         try:
-            match = re.search(r'(.*) Hours for Motorcycle (.*).*', jam_col)
+            match = re.search(r'(.*) Hours for Motorcycle (.*).*', hour_col)
             if match:
-                kategori_jam = match.group(1)
-                hari = match.group(2)
-                jumlah_col = f'Number of Motorcycle ({hari})'
+                hour_category = match.group(1)
+                day = match.group(2)
+                count_col = f'Number of Motorcycle ({day})'
             else:
                 continue
 
-            if jumlah_col in df_load.columns:
-                avg_jam = df_load[jam_col].mean()
-                avg_jumlah = df_load[jumlah_col].mean()
-                data_points.append({'Time (Decimal Hours)': avg_jam, 'Average Load': avg_jumlah, 'Type': 'Motorcycle - ' + hari, 'Category': kategori_jam})
+            if count_col in df_load.columns:
+                avg_hour = df_load[hour_col].mean()
+                avg_count = df_load[count_col].mean()
+                data_points.append({'Time (Decimal Hours)': avg_hour, 'Average Load': avg_count, 'Type': 'Motorcycle - ' + day, 'Category': hour_category})
         except Exception:
             pass
 
     # Cars
     car_cols = [c for c in df_load.columns if 'Car' in c]
-    for jam_col in [c for c in car_cols if 'Hours' in c]:
+    for hour_col in [c for c in car_cols if 'Hours' in c]:
         try:
-            match = re.search(r'(.*) Hours for Car (.*).*', jam_col)
+            match = re.search(r'(.*) Hours for Car (.*).*', hour_col)
             if match:
-                kategori_jam = match.group(1)
-                hari = match.group(2)
-                jumlah_col = f'Number of Car ({hari})'
+                hour_category = match.group(1)
+                day = match.group(2)
+                count_col = f'Number of Car ({day})'
             else:
                 continue
                 
-            if jumlah_col in df_load.columns:
-                avg_jam = df_load[jam_col].mean()
-                avg_jumlah = df_load[jumlah_col].mean()
-                data_points.append({'Time (Decimal Hours)': avg_jam, 'Average Load': avg_jumlah, 'Type': 'Car - ' + hari, 'Category': kategori_jam})
+            if count_col in df_load.columns:
+                avg_hour = df_load[hour_col].mean()
+                avg_count = df_load[count_col].mean()
+                data_points.append({'Time (Decimal Hours)': avg_hour, 'Average Load': avg_count, 'Type': 'Car - ' + day, 'Category': hour_category})
         except Exception:
             pass
 
@@ -621,7 +621,7 @@ def plot_load_24_hours(df):
     st.info("Load Categories (Off-Peak/Moderate/Peak) are represented by background colors.")
     
     # Base load calculation
-    jumlah_cols = [c for c in df.columns if c.startswith('Number of')]
+    number_cols = [c for c in df.columns if c.startswith('Number of')]
     base_load = df[number_cols].mean().mean() / 5 if number_cols and df[number_cols].mean().mean() > 0 else 50
     
     hours = np.arange(24)
@@ -641,7 +641,7 @@ def plot_load_24_hours(df):
         avg_counts_synth = [c + 50 for c in avg_counts_synth]
 
     df_24h = pd.DataFrame({'Hour': hours, 'Average Vehicle Count': avg_counts_synth})
-    df_24h['Load Category'] = df_24h['Hour'].apply(kategori_jam_otomatis)
+    df_24h['Load Category'] = df_24h['Hour'].apply(hour_category_auto)
     
     fig, ax = plt.subplots(figsize=(12, 6))
     
@@ -1143,35 +1143,35 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spatial):
     st.subheader("Tariff Potential Simulation (What-If Analysis)")
     st.markdown("**1. Select Parking Location** (Location aggregate data will be used as default)")
     
-    selected_titik = st.selectbox(
+    selected_location = st.selectbox(
         "Select Parking Location for Simulation:", 
         df_spatial['Location Point'].unique().tolist(), 
-        key='sim_titik_select'
+        key='sim_location_select'
     )
     
-    default_data = df_spatial[df_spatial['Location Point'] == selected_titik].iloc[0]
+    default_data = df_spatial[df_spatial['Location Point'] == selected_location].iloc[0]
     
-    default_jam_val = 9.0
+    default_hour_val = 9.0
     for col in default_data.index:
         if 'Peak Hours' in col and 'Motorcycle' in col and 'Weekday' in col:
-            default_jam_val = default_data[col]
+            default_hour_val = default_data[col]
             break
 
-    with st.expander(f"⚙️ Configure Scenario for {selected_titik} ⚙️"):
+    with st.expander(f"⚙️ Configure Scenario for {selected_location} ⚙️"):
         st.markdown(f"**Location Default Aggregate Data:**")
         st.markdown(f"* Motorcycles Weekday: **{default_data.get('Number of Motorcycles (Weekday)', 0):.0f}** units, Cars Weekday: **{default_data.get('Number of Cars (Weekday)', 0):.0f}** units")
-        st.markdown(f"* Peak Hours Weekday Motorcycle: **{default_jam_val:.2f}**")
+        st.markdown(f"* Peak Hours Weekday Motorcycle: **{default_hour_val:.2f}**")
 
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1: 
-            jenis = st.selectbox("Vehicle Type", ['Motorcycle', 'Car'], key='sim_jenis')
+            vehicle_type = st.selectbox("Vehicle Type", ['Motorcycle', 'Car'], key='sim_vehicle_type')
         with col2: 
-            hari = st.selectbox("Day", ['Weekday', 'Weekend'], key='sim_hari')
+            day = st.selectbox("Day", ['Weekday', 'Weekend'], key='sim_day')
         with col3: 
-            jam_for_time_input = default_jam_val
+            hour_for_time_input = default_hour_val
             try:
-                time_obj_default = datetime.time(int(jam_for_time_input // 1), int((jam_for_time_input % 1) * 60))
+                time_obj_default = datetime.time(int(hour_for_time_input // 1), int((hour_for_time_input % 1) * 60))
             except ValueError:
                 time_obj_default = datetime.time(9, 0)
                 
@@ -1179,68 +1179,68 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spatial):
                 "Time (HH:MM)", 
                 value=time_obj_default, 
                 step=datetime.timedelta(minutes=1), 
-                key='sim_jam_time'
+                key='sim_hour_time'
             )
-            jam_desimal_input = time_to_decimal_hour(time_obj) 
-            st.caption(f"Model Hour Value: **{jam_desimal_input:.2f}**") 
+            hour_decimal_input = time_to_decimal_hour(time_obj) 
+            st.caption(f"Model Hour Value: **{hour_decimal_input:.2f}**") 
             
         with col4: 
-            default_jumlah = default_data.get(f'Number of {jenis} ({hari})', 100)
-            jumlah_input = st.number_input(f"Vehicle Count ({jenis})", min_value=1, max_value=500, value=int(default_jumlah), key='sim_jumlah')
+            default_count = default_data.get(f'Number of {vehicle_type} ({day})', 100)
+            vehicle_count_input = st.number_input(f"Vehicle Count ({vehicle_type})", min_value=1, max_value=500, value=int(default_count), key='sim_vehicle_count')
         with col5: 
             st.markdown("<br>", unsafe_allow_html=True) 
             submitted = st.button("Predict Result 🚀", key='sim_submit', type='primary')
 
         if submitted:
-            jenis_key = 'motorcycle' if jenis == 'Motorcycle' else 'car'
-            data = models_data[jenis_key]
+            vehicle_key = 'motorcycle' if vehicle_type == 'Motorcycle' else 'car'
+            data = models_data[vehicle_key]
             
             # Get location-specific data for prediction
-            location_idx = df_processed[df_processed['Location Point'] == selected_titik].index[0] if selected_titik in df_processed['Location Point'].values else 0
+            location_idx = df_processed[df_processed['Location Point'] == selected_location].index[0] if selected_location in df_processed['Location Point'].values else 0
             location_row = df_processed.iloc[location_idx]
             
-            pred_class, confidence, top_gain, proba_dict, keterangan_jam = predict_single_input(
-                jenis, hari, jam_desimal_input, jumlah_input, 
+            pred_class, confidence, top_gain, proba_dict, hour_description = predict_single_input(
+                vehicle_type, day, hour_decimal_input, vehicle_count_input, 
                 data['model'], data['le'], location_row
             )
             
             if not isinstance(pred_class, str) or "Error" in pred_class or "Failed" in pred_class:
                 st.error(f"❌ {pred_class}")
-                if "Error:" in pred_class and len(keterangan_jam) > 100:
+                if "Error:" in pred_class and len(hour_description) > 100:
                     with st.expander("📋 Debug Information"):
-                        st.code(keterangan_jam)
+                        st.code(hour_description)
             else:
-                rekomendasi_tarif_dasar = tarif_mapping[jenis].get(pred_class, 0)
-                rekomendasi_tarif_progresif = calculate_progresif_tarif(jenis, pred_class, jam_desimal_input)
+                base_tariff_recommended = tariff_mapping[vehicle_type].get(pred_class, 0)
+                progressive_tariff_recommended = calculate_progressive_tariff(vehicle_type, pred_class, hour_decimal_input)
                 
                 st.markdown("---")
                 col_res1, col_res2, col_res3 = st.columns(3)
                 col_res1.metric("Tariff Potential Class (Simulation)", f"Potential {pred_class.upper()}", delta=f"Confidence: {confidence:.3f}")
-                col_res2.metric("Recommended Base Tariff", f"Rp{rekomendasi_tarif_dasar:,}", delta=f"Class: {pred_class}")
+                col_res2.metric("Recommended Base Tariff", f"Rp{base_tariff_recommended:,}", delta=f"Class: {pred_class}")
                 
-                col_res3.metric("Recommended PROGRESSIVE Tariff", f"Rp{rekomendasi_tarif_progresif:,}", delta=f"Increase: Rp{rekomendasi_tarif_progresif - rekomendasi_tarif_dasar:,}")
+                col_res3.metric("Recommended PROGRESSIVE Tariff", f"Rp{progressive_tariff_recommended:,}", delta=f"Increase: Rp{progressive_tariff_recommended - base_tariff_recommended:,}")
                 
                 st.markdown("---")
                 col_info1, col_info2 = st.columns(2)
                 
                 with col_info1:
                     st.markdown("**Time Logic Explanation:**")
-                    st.info(keterangan_jam)
+                    st.info(hour_description)
                     st.markdown("**Top 3 Contributors (Local Gain):**")
                     if isinstance(top_gain, pd.Series) and len(top_gain) > 0:
                         for idx, (feature_name, gain_value) in enumerate(top_gain.items(), 1):
-                            st.markdown(f"- {feature_name} (Pendorong utama prediksi)")
+                            st.markdown(f"- {feature_name} (Main prediction driver)")
                     else:
-                        st.markdown("- Tidak ada data kontribusi tersedia")
+                        st.markdown("- No contribution data available")
                     
-                    st.markdown("**Probabilitas Semua Kelas:**")
+                    st.markdown("**Probability of All Classes:**")
                     # Display probabilities with clean formatting (convert numpy types to Python native)
                     clean_proba = {cls: float(prob) for cls, prob in proba_dict.items()}
                     st.code(str(clean_proba), language="python")
 
                 with col_info2:
                     st.markdown("**Progressive Logic Applied:**")
-                    st.warning(f"If **Hour > 9.00**, **{pred_class}** tariff increases by **Rp{rekomendasi_tarif_progresif - rekomendasi_tarif_dasar:,}** from base tariff.")
+                    st.warning(f"If **Hour > 9.00**, **{pred_class}** tariff increases by **Rp{progressive_tariff_recommended - base_tariff_recommended:,}** from base tariff.")
 
 
 # =================================================================
