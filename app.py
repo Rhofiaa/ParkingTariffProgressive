@@ -293,7 +293,7 @@ def load_and_preprocess_data(file_path):
     df_raw = df.copy()
 
     # Annual Revenue Columns
-    pend_cols = [
+    revenue_cols = [
         'Annual Parking Fee Revenue (Weekday – Motorcycles)',
         'Annual Parking Fee Revenue (Weekday – Cars)',
         'Annual Parking Fee Revenue (Weekend – Motorcycles)',
@@ -301,10 +301,10 @@ def load_and_preprocess_data(file_path):
     ]
     
     # Number of Vehicles Columns (for Load Graphs)
-    jumlah_cols = [c for c in df.columns if c.startswith('Number of')]
+    number_cols = [c for c in df.columns if c.startswith('Number of')]
 
     # Clean and convert revenue columns
-    for c in pend_cols:
+    for c in revenue_cols:
         if c in df.columns:
             df[c] = df[c].astype(str).str.replace(r'[^\d,\.]', '', regex=True)
             df[c] = df[c].str.replace('.', '', regex=False)
@@ -329,36 +329,36 @@ def load_and_preprocess_data(file_path):
                     df[col] = df[col].fillna(df[col].mode()[0])
 
     # Calculate total revenue
-    moto_pend_cols = [c for c in pend_cols if 'Motorcycle' in c]
-    car_pend_cols = [c for c in pend_cols if 'Car' in c]
-    df['Total_Revenue_Motorcycle'] = df[moto_pend_cols].sum(axis=1) 
-    df['Total_Revenue_Car'] = df[car_pend_cols].sum(axis=1) 
+    motorcycle_revenue_cols = [c for c in revenue_cols if 'Motorcycle' in c]
+    car_revenue_cols = [c for c in revenue_cols if 'Car' in c]
+    df['Total_Revenue_Motorcycle'] = df[motorcycle_revenue_cols].sum(axis=1) 
+    df['Total_Revenue_Car'] = df[car_revenue_cols].sum(axis=1) 
 
     # Classify tariff potential (Target)
-    batas_moto = None
-    batas_car = None
+    motorcycle_bounds = None
+    car_bounds = None
     
     try:
         df['Class_Motorcycle'] = pd.qcut(df['Total_Revenue_Motorcycle'], q=3, labels=['Low','Medium','High'], duplicates='drop')
-        batas_moto = df['Total_Revenue_Motorcycle'].quantile([0.333, 0.666]).drop_duplicates().sort_values()
+        motorcycle_bounds = df['Total_Revenue_Motorcycle'].quantile([0.333, 0.666]).drop_duplicates().sort_values()
     except ValueError:
         df['Class_Motorcycle'] = pd.cut(df['Total_Revenue_Motorcycle'], bins=[-np.inf, df['Total_Revenue_Motorcycle'].median(), np.inf], labels=['Low', 'High']).fillna('Low')
-        batas_moto = df['Total_Revenue_Motorcycle'].quantile([0.5]).drop_duplicates().sort_values()
+        motorcycle_bounds = df['Total_Revenue_Motorcycle'].quantile([0.5]).drop_duplicates().sort_values()
         
     try:
         df['Class_Car'] = pd.qcut(df['Total_Revenue_Car'], q=3, labels=['Low','Medium','High'], duplicates='drop')
-        batas_car = df['Total_Revenue_Car'].quantile([0.333, 0.666]).drop_duplicates().sort_values()
+        car_bounds = df['Total_Revenue_Car'].quantile([0.333, 0.666]).drop_duplicates().sort_values()
     except ValueError:
         df['Class_Car'] = pd.cut(df['Total_Revenue_Car'], bins=[-np.inf, df['Total_Revenue_Car'].median(), np.inf], labels=['Low', 'High']).fillna('Low')
-        batas_car = df['Total_Revenue_Car'].quantile([0.5]).drop_duplicates().sort_values()
+        car_bounds = df['Total_Revenue_Car'].quantile([0.5]).drop_duplicates().sort_values()
 
     if all(c in df.columns for c in ['Latitude', 'Longitude', 'Location Point']):
-        df_spasial = df[['Latitude', 'Longitude', 'Location Point'] + jam_cols + jumlah_cols].copy()
+        df_spatial = df[['Latitude', 'Longitude', 'Location Point'] + jam_cols + number_cols].copy()
         # Remove rows without location information
-        df_spasial['Location Point'] = df_spasial['Location Point'].astype(str).str.strip()
-        df_spasial = df_spasial.replace({'Location Point': {'nan': None}})
-        df_spasial = df_spasial.dropna(subset=['Location Point', 'Latitude', 'Longitude'])
-        df_spasial = df_spasial.reset_index(drop=True)
+        df_spatial['Location Point'] = df_spatial['Location Point'].astype(str).str.strip()
+        df_spatial = df_spatial.replace({'Location Point': {'nan': None}})
+        df_spatial = df_spatial.dropna(subset=['Location Point', 'Latitude', 'Longitude'])
+        df_spatial = df_spatial.reset_index(drop=True)
 
         # Also remove from main df
         before_drop = df.shape[0]
@@ -373,7 +373,7 @@ def load_and_preprocess_data(file_path):
         st.error("Coordinate columns ('Location Point', 'Latitude', 'Longitude') not found.")
         return None, None, None, None, None
     
-    return df, df_spasial, jam_cols, df_raw, {'motorcycle': batas_moto, 'car': batas_car}
+    return df, df_spatial, jam_cols, df_raw, {'motorcycle': motorcycle_bounds, 'car': car_bounds}
 
 # --- Train Random Forest Models (Cached) ---
 @st.cache_resource
@@ -551,11 +551,11 @@ def display_data_table(df_raw, df_processed):
 
 
 # --- Visualization Support Functions ---
-def plot_load_vs_time(df, jam_cols, jumlah_cols):
+def plot_load_vs_time(df, jam_cols, number_cols):
     st.subheader("Average Load (Vehicle Count) vs Time (0-24 Hours)")
     st.info("This graph illustrates average vehicle load correlation with time ranges in your dataset.")
     
-    df_load = df[jam_cols + jumlah_cols].copy()
+    df_load = df[jam_cols + number_cols].copy()
     data_points = []
     
     # Motorcycles
@@ -622,7 +622,7 @@ def plot_load_24_hours(df):
     
     # Base load calculation
     jumlah_cols = [c for c in df.columns if c.startswith('Number of')]
-    base_load = df[jumlah_cols].mean().mean() / 5 if jumlah_cols and df[jumlah_cols].mean().mean() > 0 else 50
+    base_load = df[number_cols].mean().mean() / 5 if number_cols and df[number_cols].mean().mean() > 0 else 50
     
     hours = np.arange(24)
     avg_counts_synth = [
@@ -676,7 +676,7 @@ def plot_load_24_hours(df):
 
 
 # Module 2: Visualization
-def display_visualization(df, batas_kuantil, jam_cols, jumlah_cols):
+def display_visualization(df, quantile_bounds, jam_cols, number_cols):
     st.markdown("""
     <div style='padding: 30px; background: linear-gradient(135deg, #ff8c00 0%, #ff6b35 100%); border-radius: 16px; margin-bottom: 40px; box-shadow: 0 10px 35px rgba(255, 140, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px);'>
         <h2 style='color: white; margin: 0; font-size: 2.2rem; font-weight: 800; letter-spacing: -0.5px;'>2️⃣ Visualization & Data Analysis</h2>
@@ -715,33 +715,33 @@ def display_visualization(df, batas_kuantil, jam_cols, jumlah_cols):
         st.warning("These thresholds are used to form classification labels (Low/Medium/High).")
         col_m, col_c = st.columns(2)
         
-        if batas_kuantil['motorcycle'] is not None:
+        if quantile_bounds['motorcycle'] is not None:
             with col_m:
                 st.markdown("### Motorcycle Quantile Thresholds 🏍️")
-                batas_moto = batas_kuantil['motorcycle']
-                if len(batas_moto) == 2:
-                    st.markdown(f"* **Low** : Revenue < **Rp{batas_moto.iloc[0]:,.0f}**")
-                    st.markdown(f"* **Medium** : **Rp{batas_moto.iloc[0]:,.0f}** to **Rp{batas_moto.iloc[1]:,.0f}**")
-                    st.markdown(f"* **High** : Revenue > **Rp{batas_moto.iloc[1]:,.0f}**")
-                elif len(batas_moto) == 1:
-                    st.markdown(f"* **Low** : Revenue < **Rp{batas_moto.iloc[0]:,.0f}**")
-                    st.markdown(f"* **High** : Revenue > **Rp{batas_moto.iloc[0]:,.0f}**")
+                motorcycle_bounds = quantile_bounds['motorcycle']
+                if len(motorcycle_bounds) == 2:
+                    st.markdown(f"* **Low** : Revenue < **Rp{motorcycle_bounds.iloc[0]:,.0f}**")
+                    st.markdown(f"* **Medium** : **Rp{motorcycle_bounds.iloc[0]:,.0f}** to **Rp{motorcycle_bounds.iloc[1]:,.0f}**")
+                    st.markdown(f"* **High** : Revenue > **Rp{motorcycle_bounds.iloc[1]:,.0f}**")
+                elif len(motorcycle_bounds) == 1:
+                    st.markdown(f"* **Low** : Revenue < **Rp{motorcycle_bounds.iloc[0]:,.0f}**")
+                    st.markdown(f"* **High** : Revenue > **Rp{motorcycle_bounds.iloc[0]:,.0f}**")
                 else:
                     st.warning("Cannot calculate quantile thresholds for motorcycles.")
         else:
             col_m.warning("Motorcycle quantile thresholds unavailable.")
 
-        if batas_kuantil['car'] is not None:
+        if quantile_bounds['car'] is not None:
             with col_c:
                 st.markdown("### Car Quantile Thresholds 🚗")
-                batas_car = batas_kuantil['car']
-                if len(batas_car) == 2:
-                    st.markdown(f"* **Low** : Revenue < **Rp{batas_car.iloc[0]:,.0f}**")
-                    st.markdown(f"* **Medium** : **Rp{batas_car.iloc[0]:,.0f}** to **Rp{batas_car.iloc[1]:,.0f}**")
-                    st.markdown(f"* **High** : Revenue > **Rp{batas_car.iloc[1]:,.0f}**")
-                elif len(batas_car) == 1:
-                    st.markdown(f"* **Low** : Revenue < **Rp{batas_car.iloc[0]:,.0f}**")
-                    st.markdown(f"* **High** : Revenue > **Rp{batas_car.iloc[0]:,.0f}**")
+                car_bounds = quantile_bounds['car']
+                if len(car_bounds) == 2:
+                    st.markdown(f"* **Low** : Revenue < **Rp{car_bounds.iloc[0]:,.0f}**")
+                    st.markdown(f"* **Medium** : **Rp{car_bounds.iloc[0]:,.0f}** to **Rp{car_bounds.iloc[1]:,.0f}**")
+                    st.markdown(f"* **High** : Revenue > **Rp{car_bounds.iloc[1]:,.0f}**")
+                elif len(car_bounds) == 1:
+                    st.markdown(f"* **Low** : Revenue < **Rp{car_bounds.iloc[0]:,.0f}**")
+                    st.markdown(f"* **High** : Revenue > **Rp{car_bounds.iloc[0]:,.0f}**")
                 else:
                     st.warning("Cannot calculate quantile thresholds for cars.")
         else:
@@ -1054,7 +1054,7 @@ def display_modeling(models_data):
 
 
 # Module 4: Map & Simulation
-def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
+def display_map_and_simulation(df_long, map_center, models_data, df_spatial):
     st.markdown("""
     <div style='padding: 20px; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); border-radius: 10px; margin-bottom: 30px;'>
         <h2 style='color: white; margin: 0; font-size: 2rem;'>4️⃣ Map & Progressive Tariff Simulation</h2>
@@ -1075,7 +1075,7 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
     fg_all = folium.FeatureGroup(name='All Parking Locations', show=True)
     features_search = []
     
-    for index, row in df_spasial.iterrows():
+    for index, row in df_spatial.iterrows():
         titik = row['Location Point']
         lat, lon = row['Latitude'], row['Longitude']
         
@@ -1145,11 +1145,11 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
     
     selected_titik = st.selectbox(
         "Select Parking Location for Simulation:", 
-        df_spasial['Location Point'].unique().tolist(), 
+        df_spatial['Location Point'].unique().tolist(), 
         key='sim_titik_select'
     )
     
-    default_data = df_spasial[df_spasial['Location Point'] == selected_titik].iloc[0]
+    default_data = df_spatial[df_spatial['Location Point'] == selected_titik].iloc[0]
     
     default_jam_val = 9.0
     for col in default_data.index:
@@ -1247,7 +1247,7 @@ def display_map_and_simulation(df_long, map_center, models_data, df_spasial):
 # === MAIN APPLICATION EXECUTION ===
 # =================================================================
 
-df_processed, df_spasial, jam_cols, df_raw, batas_kuantil = load_and_preprocess_data(FILE_PATH)
+df_processed, df_spatial, jam_cols, df_raw, quantile_bounds = load_and_preprocess_data(FILE_PATH)
 if df_processed is None: 
     st.error(f"Failed to load data from '{FILE_PATH}'. Ensure file exists and contains required spatial columns.")
     st.stop()
@@ -1267,7 +1267,7 @@ try:
     else:
         df_processed['Pred_Class_Car'] = df_processed['Class_Car']
 
-    df_mapping = df_spasial.dropna(subset=['Latitude', 'Longitude'])
+    df_mapping = df_spatial.dropna(subset=['Latitude', 'Longitude'])
 
     df_moto_map = df_mapping.copy()
     df_moto_map['jenis_kendaraan'] = 'Motorcycle'
@@ -1325,11 +1325,11 @@ if page == "Data Table":
     display_data_table(df_raw, df_processed)
 
 elif page == "Visualization":
-    jumlah_cols = [c for c in df_processed.columns if c.startswith('Number of')]
-    display_visualization(df_processed, batas_kuantil, jam_cols, jumlah_cols)
+    number_cols = [c for c in df_processed.columns if c.startswith('Number of')]
+    display_visualization(df_processed, quantile_bounds, jam_cols, number_cols)
 
 elif page == "Modeling":
     display_modeling(models_data)
 
 elif page == "Map & Simulation":
-    display_map_and_simulation(df_long, map_center, models_data, df_spasial)
+    display_map_and_simulation(df_long, map_center, models_data, df_spatial)
