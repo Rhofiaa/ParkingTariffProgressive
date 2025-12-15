@@ -252,7 +252,7 @@ def hour_category_auto(hour):
         return 'Moderate'
 
 # Base Tariff Mapping
-tarif_mapping = {
+tariff_mapping = {
     'Motorcycle': {'Low': 1000, 'Medium': 2000, 'High': 3000},
     'Car': {'Low': 3000, 'Medium': 4000, 'High': 5000}
 }
@@ -981,19 +981,19 @@ def display_modeling(models_data):
         st.subheader("📑 Tariff Recommendation Policy Table")
         st.info("Displays tariff potential classification for each parking location based on trained models.")
         
-        tarif_mapping = {
+        tariff_mapping = {
             'Motorcycle': {'Low': 1000, 'Medium': 2000, 'High': 3000},
             'Car': {'Low': 3000, 'Medium': 4000, 'High': 5000}
         }
         
         model_moto = models_data['motorcycle']['model']
         le_moto = models_data['motorcycle']['le']
-        fitur_moto = models_data['motorcycle']['fitur']
+        features_moto = models_data['motorcycle']['fitur']
         X_all_moto = models_data['motorcycle']['X_all']
         
         model_car = models_data['car']['model']
         le_car = models_data['car']['le']
-        fitur_car = models_data['car']['fitur']
+        features_car = models_data['car']['fitur']
         X_all_car = models_data['car']['X_all']
         
         if model_moto is None or model_car is None:
@@ -1008,13 +1008,13 @@ def display_modeling(models_data):
                 
                 df_result['Tariff Potential (Motorcycle)'] = le_moto.inverse_transform(y_pred_m_enc)
                 df_result['Recommended Tariff (Motorcycle)'] = df_result['Tariff Potential (Motorcycle)'].apply(
-                    lambda x: f"Rp{tarif_mapping['Motorcycle'].get(x, 0):,.0f}"
+                    lambda x: f"Rp{tariff_mapping['Motorcycle'].get(x, 0):,.0f}"
                 )
                 
                 y_pred_c_enc = model_car.predict(X_all_car)
                 df_result['Tariff Potential (Car)'] = le_car.inverse_transform(y_pred_c_enc)
                 df_result['Recommended Tariff (Car)'] = df_result['Tariff Potential (Car)'].apply(
-                    lambda x: f"Rp{tarif_mapping['Car'].get(x, 0):,.0f}"
+                    lambda x: f"Rp{tariff_mapping['Car'].get(x, 0):,.0f}"
                 )
                 
                 kolom_output = ['Parking Location', 'Tariff Potential (Motorcycle)', 'Recommended Tariff (Motorcycle)', 
@@ -1272,13 +1272,13 @@ try:
     df_moto_map = df_mapping.copy()
     df_moto_map['jenis_kendaraan'] = 'Motorcycle'
     df_moto_map['kategori_load'] = df_processed['Pred_Class_Motorcycle']
-    df_moto_map['prediksi_tarif'] = df_processed['Pred_Class_Motorcycle'].apply(lambda x: tarif_mapping['Motorcycle'].get(x, 0))
+    df_moto_map['prediksi_tarif'] = df_processed['Pred_Class_Motorcycle'].apply(lambda x: tariff_mapping['Motorcycle'].get(x, 0))
     df_moto_map.rename(columns={'Location Point': 'titik', 'Latitude': 'latitude', 'Longitude': 'longitude'}, inplace=True) 
 
     df_car_map = df_mapping.copy()
     df_car_map['jenis_kendaraan'] = 'Car'
     df_car_map['kategori_load'] = df_processed['Pred_Class_Car']
-    df_car_map['prediksi_tarif'] = df_processed['Pred_Class_Car'].apply(lambda x: tarif_mapping['Car'].get(x, 0))
+    df_car_map['prediksi_tarif'] = df_processed['Pred_Class_Car'].apply(lambda x: tariff_mapping['Car'].get(x, 0))
     df_car_map.rename(columns={'Location Point': 'titik', 'Latitude': 'latitude', 'Longitude': 'longitude'}, inplace=True) 
 
     df_long = pd.concat([df_moto_map, df_car_map], ignore_index=True).dropna(subset=['latitude', 'longitude']) 
