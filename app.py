@@ -685,22 +685,32 @@ def display_visualization(df, quantile_boundaries, hour_cols):
         with col1:
             st.markdown("#### Motorcycle Tariff Potential Category Distribution 🏍️")
             fig, ax = plt.subplots(figsize=(7, 5))
-            sns.histplot(data=df, x='Total_Revenue_Motorcycle', hue='Class_Motorcycle', palette='viridis', multiple='stack', ax=ax, kde=True)
+            # Create a copy with translated labels for visualization
+            df_viz = df.copy()
+            df_viz['Class_Motorcycle_EN'] = df_viz['Class_Motorcycle'].apply(lambda x: CLASS_TRANSLATION.get(x, x))
+            sns.histplot(data=df_viz, x='Total_Revenue_Motorcycle', hue='Class_Motorcycle_EN', palette='viridis', multiple='stack', ax=ax, kde=True)
             ax.set_title('Motorcycle Total Revenue vs Category')
             ax.set_xlabel('Annual Total Revenue')
             st.pyplot(fig)
             with st.expander("View Points Count per Category"):
-                st.dataframe(df['Class_Motorcycle'].value_counts().to_frame('Point Count'), use_container_width=True)
+                # Translate counts display
+                counts_translated = df['Class_Motorcycle'].apply(lambda x: CLASS_TRANSLATION.get(x, x)).value_counts().to_frame('Point Count')
+                st.dataframe(counts_translated, use_container_width=True)
 
         with col2:
             st.markdown("#### Car Tariff Potential Category Distribution 🚗")
             fig, ax = plt.subplots(figsize=(7, 5))
-            sns.histplot(data=df, x='Total_Revenue_Car', hue='Class_Car', palette='plasma', multiple='stack', ax=ax, kde=True)
+            # Create a copy with translated labels for visualization
+            df_viz = df.copy()
+            df_viz['Class_Car_EN'] = df_viz['Class_Car'].apply(lambda x: CLASS_TRANSLATION.get(x, x))
+            sns.histplot(data=df_viz, x='Total_Revenue_Car', hue='Class_Car_EN', palette='plasma', multiple='stack', ax=ax, kde=True)
             ax.set_title('Car Total Revenue vs Category')
             ax.set_xlabel('Annual Total Revenue')
             st.pyplot(fig)
             with st.expander("View Points Count per Category"):
-                st.dataframe(df['Class_Car'].value_counts().to_frame('Point Count'), use_container_width=True)
+                # Translate counts display
+                counts_translated = df['Class_Car'].apply(lambda x: CLASS_TRANSLATION.get(x, x)).value_counts().to_frame('Point Count')
+                st.dataframe(counts_translated, use_container_width=True)
 
     with tab2:
         st.subheader("💰 ANNUAL TOTAL REVENUE QUANTILE BOUNDARIES (Rp) 💰")
@@ -1094,8 +1104,10 @@ def display_modeling(df_processed, models_data):
                 
                 st.markdown("#### Confusion Matrix")
                 fig, ax = plt.subplots(figsize=(6, 5))
+                # Translate Indonesian labels to English for display
+                class_labels_english = [CLASS_TRANSLATION.get(c, c) for c in le.classes_]
                 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                            xticklabels=le.classes_, yticklabels=le.classes_, ax=ax)
+                            xticklabels=class_labels_english, yticklabels=class_labels_english, ax=ax)
                 ax.set_title('Confusion Matrix')
                 ax.set_ylabel('Actual Class')
                 ax.set_xlabel('Predicted Class')
@@ -1144,9 +1156,11 @@ def display_modeling(df_processed, models_data):
             
             # Create tree visualization with larger size for readability
             fig, ax = plt.subplots(figsize=(25, 15))
+            # Translate class names to English for display
+            class_names_english = [CLASS_TRANSLATION.get(c, c) for c in le.classes_]
             plot_tree(sample_tree, 
                      feature_names=features,
-                     class_names=le.classes_,
+                     class_names=class_names_english,
                      filled=True,
                      rounded=True,
                      fontsize=10,
@@ -1428,8 +1442,9 @@ def display_modeling(df_processed, models_data):
             df_train_indices = list(range(int(len(df_processed) * 0.8)))
             df_train = df_processed.iloc[df_train_indices]
             
-            class_counts_motorcycle = df_train['Class_Motorcycle'].value_counts()
-            class_counts_car = df_train['Class_Car'].value_counts()
+            # Translate class labels for display
+            class_counts_motorcycle = df_train['Class_Motorcycle'].apply(lambda x: CLASS_TRANSLATION.get(x, x)).value_counts()
+            class_counts_car = df_train['Class_Car'].apply(lambda x: CLASS_TRANSLATION.get(x, x)).value_counts()
             
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
             
