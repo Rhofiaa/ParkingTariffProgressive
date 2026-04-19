@@ -189,12 +189,18 @@ def load_and_preprocess_data(file_path):
     
     # Imputation for visualization only
     for col in df_display.columns:
-        if df_display[col].dtype != 'object':
-            if col not in revenue_cols:
-                df_display[col] = df_display[col].fillna(df_display[col].median())
+        if col in revenue_cols:
+            continue
+
+        if pd.api.types.is_numeric_dtype(df_display[col]):
+            median_val = df_display[col].median()
+            if pd.notna(median_val):
+                df_display[col] = df_display[col].fillna(median_val)
         else:
             if col not in ['Location Point', 'Class_Motorcycle', 'Class_Car']:
-                df_display[col] = df_display[col].fillna(df_display[col].mode()[0] if len(df_display[col].mode()) > 0 else 'Unknown')
+                mode_series = df_display[col].mode(dropna=True)
+                fill_value = mode_series.iloc[0] if len(mode_series) > 0 else 'Unknown'
+                df_display[col] = df_display[col].fillna(fill_value)
 
     # Labeling for visualization
     motorcycle_quantiles = None
